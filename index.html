@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0b1026" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Midnight" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<title>Midnight · 网速检测</title>
+<style>
+  :root {
+    --bg: #0b1026;
+    --bg2: #131a3a;
+    --card: rgba(255,255,255,0.05);
+    --card-border: rgba(255,255,255,0.08);
+    --text: #e8ecff;
+    --muted: #8b93c4;
+    --accent: #7c89ff;
+    --accent2: #b388ff;
+    --good: #34e0a1;
+    --ok: #ffd166;
+    --bad: #ff6b8a;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    color: var(--text);
+    background: radial-gradient(120% 90% at 50% -10%, #1c2350 0%, var(--bg) 55%, #05060f 100%);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  /* twinkling stars */
+  #stars { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: calc(var(--safe-top) + 24px) 18px calc(var(--safe-bottom) + 40px);
+  }
+  header { text-align: center; margin-bottom: 22px; }
+  .logo { font-size: 30px; }
+  h1 {
+    font-size: 26px; font-weight: 700; margin: 8px 0 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .sub { color: var(--muted); font-size: 13px; }
+
+  /* speed gauge */
+  .gauge {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 22px;
+    padding: 22px 18px 18px;
+    text-align: center;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    margin-bottom: 16px;
+  }
+  .gauge .big {
+    font-size: 60px; font-weight: 800; line-height: 1; letter-spacing: -1px;
+    font-variant-numeric: tabular-nums;
+  }
+  .gauge .unit { font-size: 16px; color: var(--muted); font-weight: 600; }
+  .gauge .label { color: var(--muted); font-size: 13px; margin-top: 6px; min-height: 18px; }
+  .bar { height: 8px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; margin-top: 16px; }
+  .bar > i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 99px; transition: width .2s ease;
+  }
+  .dual { display: flex; gap: 12px; margin-bottom: 18px; }
+  .dual .gauge { flex: 1; margin-bottom: 0; padding: 16px 10px; }
+  .dual .big { font-size: 34px; }
+
+  button.run {
+    width: 100%;
+    border: none;
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 17px; font-weight: 700;
+    color: #fff;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    box-shadow: 0 8px 30px rgba(124,137,255,0.35);
+    cursor: pointer;
+    transition: transform .12s ease, opacity .2s ease;
+    margin-bottom: 26px;
+  }
+  button.run:active { transform: scale(0.98); }
+  button.run:disabled { opacity: .55; box-shadow: none; }
+
+  .section-title { font-size: 13px; color: var(--muted); margin: 0 4px 10px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .sites { display: flex; flex-direction: column; gap: 10px; }
+  .site {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 14px 16px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .site .ico {
+    width: 38px; height: 38px; flex: 0 0 38px;
+    border-radius: 11px;
+    display: grid; place-items: center;
+    font-size: 18px; font-weight: 700;
+    background: rgba(255,255,255,0.07);
+  }
+  .site .name { flex: 1; min-width: 0; }
+  .site .name b { font-size: 15px; font-weight: 600; display: block; }
+  .site .name span { font-size: 12px; color: var(--muted); }
+  .site .ms { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 17px; text-align: right; min-width: 74px; }
+  .site .ms small { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .dot { width: 9px; height: 9px; border-radius: 99px; background: var(--muted); flex: 0 0 9px; }
+  .dot.good { background: var(--good); box-shadow: 0 0 10px var(--good); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .dot.bad { background: var(--bad); box-shadow: 0 0 10px var(--bad); }
+  .dot.pending { animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  .good-t { color: var(--good); } .ok-t { color: var(--ok); } .bad-t { color: var(--bad); }
+
+  footer { text-align: center; color: var(--muted); font-size: 11px; margin-top: 30px; line-height: 1.6; }
+  .a2hs { margin-top: 14px; font-size: 12px; color: var(--muted); text-align: center; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 99px; animation: rot .7s linear infinite; vertical-align: -2px; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<div class="wrap">
+  <header>
+    <div class="logo">🌙</div>
+    <h1>Midnight 网速检测</h1>
+    <div class="sub">下载 / 上传 · AI 网站 &amp; YouTube 延迟</div>
+  </header>
+
+  <div class="gauge">
+    <div><span class="big" id="dlBig">0.0</span><span class="unit"> Mbps</span></div>
+    <div class="label" id="dlLabel">点击下方按钮开始测速</div>
+    <div class="bar"><i id="dlBar"></i></div>
+  </div>
+
+  <div class="dual">
+    <div class="gauge">
+      <div><span class="big" id="ulBig">0.0</span></div>
+      <div class="label">上传 Mbps</div>
+    </div>
+    <div class="gauge">
+      <div><span class="big" id="pingBig">—</span></div>
+      <div class="label">基准延迟 ms</div>
+    </div>
+  </div>
+
+  <button class="run" id="runBtn">开始测速</button>
+
+  <div class="section-title">AI 网站 &amp; 视频延迟</div>
+  <div class="sites" id="sites"></div>
+
+  <div class="a2hs" id="a2hs"></div>
+  <footer>
+    数据仅供参考 · 延迟为浏览器到站点的往返耗时（含 TLS）<br/>
+    测速由 Cloudflare 公共测速端点提供 · 不收集任何数据
+  </footer>
+</div>
+
+<script>
+/* ---------- 站点列表 ---------- */
+const SITES = [
+  { id: 'chatgpt',    name: 'ChatGPT',    desc: 'chatgpt.com',         url: 'https://chatgpt.com/favicon.ico',           letter: 'G', color: '#10a37f' },
+  { id: 'claude',     name: 'Claude',     desc: 'claude.ai',           url: 'https://claude.ai/favicon.ico',             letter: 'C', color: '#d97757' },
+  { id: 'gemini',     name: 'Gemini',     desc: 'gemini.google.com',   url: 'https://gemini.google.com/favicon.ico',     letter: '✦', color: '#4285f4' },
+  { id: 'perplexity', name: 'Perplexity', desc: 'perplexity.ai',       url: 'https://www.perplexity.ai/favicon.ico',     letter: 'P', color: '#20808d' },
+  { id: 'grok',       name: 'Grok',       desc: 'grok.com',            url: 'https://grok.com/favicon.ico',              letter: 'x', color: '#000000' },
+  { id: 'youtube',    name: 'YouTube',    desc: 'youtube.com',         url: 'https://www.youtube.com/favicon.ico',       letter: '▶', color: '#ff0033' },
+  { id: 'google',     name: 'Google',     desc: '基准参考',            url: 'https://www.google.com/favicon.ico',        letter: 'g', color: '#4285f4' },
+];
+
+/* ---------- 星空背景 ---------- */
+(function stars() {
+  const c = document.getElementById('stars');
+  const ctx = c.getContext('2d');
+  let w, h, pts = [];
+  function resize() {
+    w = c.width = innerWidth * devicePixelRatio;
+    h = c.height = innerHeight * devicePixelRatio;
+    c.style.width = innerWidth + 'px';
+    c.style.height = innerHeight + 'px';
+    const n = Math.min(140, Math.floor(innerWidth * innerHeight / 7000));
+    pts = Array.from({ length: n }, () => ({
+      x: Math.random() * w, y: Math.random() * h,
+      r: (Math.random() * 1.3 + 0.3) * devicePixelRatio,
+      a: Math.random(), s: Math.random() * 0.02 + 0.004
+    }));
+  }
+  function tick() {
+    ctx.clearRect(0, 0, w, h);
+    for (const p of pts) {
+      p.a += p.s; if (p.a > 1 || p.a < 0) p.s *= -1;
+      ctx.globalAlpha = Math.abs(p.a) * 0.8 + 0.1;
+      ctx.fillStyle = '#cdd6ff';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill();
+    }
+    requestAnimationFrame(tick);
+  }
+  addEventListener('resize', resize);
+  resize(); tick();
+})();
+
+/* ---------- 工具函数 ---------- */
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+function classify(ms) {
+  if (ms == null) return { cls: 'bad', txt: 'bad-t', label: '超时' };
+  if (ms < 150)  return { cls: 'good', txt: 'good-t' };
+  if (ms < 400)  return { cls: 'ok',   txt: 'ok-t' };
+  return { cls: 'bad', txt: 'bad-t' };
+}
+
+/* ---------- 延迟检测（往返耗时，no-cors / 图片回退）---------- */
+function probeOnce(url, timeout = 4000) {
+  return new Promise(resolve => {
+    const t0 = performance.now();
+    let done = false;
+    const finish = ok => { if (done) return; done = true; resolve(ok ? performance.now() - t0 : null); };
+    const bust = url + (url.includes('?') ? '&' : '?') + '_=' + Math.random().toString(36).slice(2);
+
+    // 优先用图片加载计时（onload/onerror 都代表连接已完成）
+    const img = new Image();
+    const to = setTimeout(() => { img.src = ''; finish(false); }, timeout);
+    img.onload = () => { clearTimeout(to); finish(true); };
+    img.onerror = () => { clearTimeout(to); finish(true); }; // 即便资源错误，连接已建立
+    img.src = bust;
+  });
+}
+
+async function measureLatency(url, samples = 4) {
+  let best = null;
+  for (let i = 0; i < samples; i++) {
+    const ms = await probeOnce(url);
+    if (ms != null) best = best == null ? ms : Math.min(best, ms);
+  }
+  return best == null ? null : Math.round(best);
+}
+
+/* ---------- 渲染站点卡片 ---------- */
+function renderSites() {
+  const box = $('sites');
+  box.innerHTML = '';
+  for (const s of SITES) {
+    const el = document.createElement('div');
+    el.className = 'site';
+    el.innerHTML = `
+      <div class="dot" id="dot-${s.id}"></div>
+      <div class="ico" style="color:${s.color === '#000000' ? '#fff' : s.color}">${s.letter}</div>
+      <div class="name"><b>${s.name}</b><span>${s.desc}</span></div>
+      <div class="ms" id="ms-${s.id}"><small>等待</small></div>`;
+    box.appendChild(el);
+  }
+}
+
+async function runLatencyTests() {
+  // 并发探测所有站点
+  await Promise.all(SITES.map(async s => {
+    const dot = $('dot-' + s.id);
+    const ms = $('ms-' + s.id);
+    dot.className = 'dot pending';
+    ms.innerHTML = '<span class="spin"></span>';
+    const result = await measureLatency(s.url);
+    const c = classify(result);
+    dot.className = 'dot ' + c.cls;
+    if (result == null) {
+      ms.innerHTML = `<span class="bad-t">超时</span>`;
+    } else {
+      ms.innerHTML = `<span class="${c.txt}">${result}</span><small> ms</small>`;
+    }
+  }));
+}
+
+/* ---------- 下载测速（Cloudflare 流式）---------- */
+async function measureDownload(onProgress) {
+  const sizes = [1e6, 5e6, 1e7, 2.5e7]; // 渐进加大，自适应网速
+  let totalBytes = 0, totalTime = 0, best = 0;
+  for (const bytes of sizes) {
+    const url = `https://speed.cloudflare.com/__down?bytes=${bytes}`;
+    const t0 = performance.now();
+    try {
+      const resp = await fetch(url, { cache: 'no-store' });
+      const reader = resp.body.getReader();
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.length;
+        const secs = (performance.now() - t0) / 1000;
+        if (secs > 0.05) {
+          const mbps = (received * 8) / secs / 1e6;
+          best = Math.max(best, mbps);
+          onProgress(mbps, clamp(received / bytes, 0, 1));
+        }
+      }
+      const secs = (performance.now() - t0) / 1000;
+      totalBytes += received; totalTime += secs;
+      const mbps = (received * 8) / secs / 1e6;
+      best = Math.max(best, mbps);
+      // 已经很快说明带宽高，够样本即可停
+      if (totalTime > 6) break;
+    } catch (e) { break; }
+  }
+  return best || (totalTime > 0 ? (totalBytes * 8) / totalTime / 1e6 : 0);
+}
+
+/* ---------- 上传测速（Cloudflare）---------- */
+async function measureUpload(onProgress) {
+  const payloadSizes = [2e6, 6e6, 1.2e7];
+  let best = 0;
+  for (const bytes of payloadSizes) {
+    const data = new Uint8Array(bytes);
+    const t0 = performance.now();
+    try {
+      await fetch('https://speed.cloudflare.com/__up', { method: 'POST', body: data, cache: 'no-store' });
+      const secs = (performance.now() - t0) / 1000;
+      const mbps = (bytes * 8) / secs / 1e6;
+      best = Math.max(best, mbps);
+      onProgress(best);
+      if (secs > 5) break;
+    } catch (e) { break; }
+  }
+  return best;
+}
+
+/* ---------- 主流程 ---------- */
+let running = false;
+async function runAll() {
+  if (running) return;
+  running = true;
+  const btn = $('runBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 测试中…';
+
+  // 重置
+  $('dlBig').textContent = '0.0';
+  $('ulBig').textContent = '0.0';
+  $('pingBig').textContent = '—';
+  $('dlBar').style.width = '0%';
+
+  // 1) 基准延迟（Cloudflare，真实 RTT）
+  $('dlLabel').textContent = '正在测量延迟…';
+  const ping = await measureLatency('https://speed.cloudflare.com/__down?bytes=0', 5);
+  $('pingBig').textContent = ping == null ? '—' : ping;
+  $('pingBig').className = 'big ' + classify(ping).txt;
+
+  // 2) 站点延迟（后台并发）
+  const sitePromise = runLatencyTests();
+
+  // 3) 下载
+  $('dlLabel').textContent = '正在测量下载速度…';
+  const dl = await measureDownload((mbps, prog) => {
+    $('dlBig').textContent = mbps.toFixed(1);
+    $('dlBar').style.width = (clamp(Math.log10(mbps + 1) / Math.log10(1000), 0.02, 1) * 100) + '%';
+  });
+  $('dlBig').textContent = dl.toFixed(1);
+  $('dlBar').style.width = (clamp(Math.log10(dl + 1) / Math.log10(1000), 0.02, 1) * 100) + '%';
+
+  // 4) 上传
+  $('dlLabel').textContent = '正在测量上传速度…';
+  const ul = await measureUpload(mbps => { $('ulBig').textContent = mbps.toFixed(1); });
+  $('ulBig').textContent = ul.toFixed(1);
+
+  await sitePromise;
+
+  $('dlLabel').textContent = `完成 · ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
+  btn.disabled = false;
+  btn.textContent = '重新测速';
+  running = false;
+}
+
+/* ---------- iOS 添加到主屏幕提示 ---------- */
+(function a2hs() {
+  const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  const isiOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isiOS && !standalone) {
+    $('a2hs').innerHTML = '💡 点击 Safari 底部「分享」→「添加到主屏幕」即可像 App 一样使用';
+  }
+})();
+
+/* ---------- 注册 Service Worker ---------- */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+renderSites();
+$('runBtn').addEventListener('click', runAll);
+</script>
+</body>
+</html>
