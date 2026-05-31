@@ -1,7 +1,7 @@
 /* Midnight 网速检测 — Service Worker
    策略:网络优先(network-first)。有网时总是拿最新页面,
    离线时才回退到缓存,保证更新能立即生效。 */
-const CACHE = 'midnight-v4';
+const CACHE = 'midnight-v5';
 const SHELL = [
   './',
   './index.html',

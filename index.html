@@ -352,6 +352,18 @@
     </details>
 
     <details>
+      <summary>📉 为什么延迟和抖动会忽大忽小？</summary>
+      <div class="ex-body">
+        <p>一部分是网络真的在抖，一部分是测量本身的噪声：</p>
+        <p>• <b>无线网天生抖</b>：WiFi / 4G / 5G 信号会被干扰、邻居抢信道、手机省电时调度射频，几十 ms 的跳动很正常。<b>插网线会稳很多。</b></p>
+        <p>• <b>缓冲膨胀（bufferbloat）</b>：当下载/上传把带宽跑满时，数据在路由器排长队，延迟会瞬间飙升好几倍——这就是边下载边打游戏会卡的原因。<b>本工具已把延迟测量放到带宽测试之前</b>，避免这个干扰。</p>
+        <p>• <b>距离远 / 绕路</b>：访问海外或走 VPN，路径长、中间节点多，任何一跳拥堵都会让延迟跳变。</p>
+        <p>• <b>测量噪声</b>：网页里发不了真正的 ping（ICMP），只能用网页请求近似，会带一点系统调度噪声。所以本工具会<b>预热连接、多测 10 次、取最小值和中位数，并剔除离群点</b>来压低这种噪声。</p>
+        <p class="accent">怎么算稳：抖动 &lt; 30ms 基本无感；30–80ms 偶尔波动；&gt; 80ms 视频通话/游戏/AI 流式会一卡一卡。</p>
+      </div>
+    </details>
+
+    <details>
       <summary>🔀 两份测速（本工具 vs fast.com）怎么看？</summary>
       <div class="ex-body">
         <p>两个工具测的<b>不是同一条路</b>，所以数字不会完全一样，这很正常：</p>
@@ -456,19 +468,27 @@ async function measureLatency(url, samples = 4) {
   return best == null ? null : Math.round(best);
 }
 
-// 基准延迟：返回最小往返(ping)与抖动(jitter)
-async function measureBaseline(samples = 6) {
+// 基准延迟：返回最小往返(ping)、典型值(median)与抖动(jitter)
+async function measureBaseline(samples = 10) {
   const url = 'https://speed.cloudflare.com/__down?bytes=0';
+  // 预热：先建立连接(DNS/TCP/TLS)，之后测的才是稳定的往返，避免冷启动拉高抖动
+  await probeOnce(url); await probeOnce(url);
   const arr = [];
   for (let i = 0; i < samples; i++) {
     const ms = await probeOnce(url);
     if (ms != null) arr.push(ms);
+    await new Promise(r => setTimeout(r, 30)); // 间隔，避免请求排队相互影响
   }
   if (!arr.length) return { ping: null, jitter: null };
-  const min = Math.min(...arr);
-  const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-  const jitter = arr.reduce((a, b) => a + Math.abs(b - mean), 0) / arr.length;
-  return { ping: Math.round(min), jitter: Math.round(jitter) };
+  const sorted = [...arr].sort((a, b) => a - b);
+  const min = sorted[0];
+  const median = sorted[Math.floor(sorted.length / 2)];
+  // 抖动用相邻样本的平均差(更贴近网络抖动的定义)，并剔除最高的离群点
+  const trimmed = sorted.slice(0, Math.max(1, sorted.length - 1));
+  let diffs = 0;
+  for (let i = 1; i < trimmed.length; i++) diffs += Math.abs(trimmed[i] - trimmed[i - 1]);
+  const jitter = trimmed.length > 1 ? diffs / (trimmed.length - 1) : 0;
+  return { ping: Math.round(min), median: Math.round(median), jitter: Math.round(jitter) };
 }
 
 /* ---------- 渲染站点卡片 ---------- */
@@ -650,16 +670,17 @@ async function runAll() {
   $('pingBig').textContent = '—';
   $('dlBar').style.width = '0%';
 
-  // 1) 基准延迟 + 抖动（Cloudflare，真实 RTT）
+  // 1) 基准延迟 + 抖动（Cloudflare，真实 RTT）—— 在空闲时测，不与带宽测试争抢
   $('dlLabel').textContent = '正在测量延迟…';
-  const base = await measureBaseline(6);
+  const base = await measureBaseline(10);
   const ping = base.ping, jitter = base.jitter;
   $('pingBig').textContent = ping == null ? '—' : ping;
   $('pingBig').className = 'big ' + classify(ping).txt;
   $('pingLabel').textContent = jitter == null ? '基准延迟 ms' : `基准延迟 ms · 抖动 ${jitter}`;
 
-  // 2) 站点延迟（后台并发）
-  const sitePromise = runLatencyTests();
+  // 2) 站点延迟 —— 同样在带宽测试之前完成，避免下载占满带宽时延迟虚高、乱跳
+  $('dlLabel').textContent = '正在测量各站点延迟…';
+  await runLatencyTests();
 
   // 3) 下载
   $('dlLabel').textContent = '正在测量下载速度…';
@@ -678,8 +699,6 @@ async function runAll() {
   $('dlLabel').textContent = '正在测量上传速度…';
   const ul = await measureUpload(mbps => { $('ulBig').textContent = mbps.toFixed(1); });
   $('ulBig').textContent = ul.toFixed(1);
-
-  await sitePromise;
 
   // 5) 解读这次结果
   interpret(dl, ul, ping, jitter);
