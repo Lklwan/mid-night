@@ -176,6 +176,47 @@
   .calc li.total { border-top: 1px solid var(--accent); }
   .calc li.total > span { color: #fff; }
   .note { font-size: 12.5px; color: var(--muted); line-height: 1.65; }
+
+  /* fast.com 对照卡片 */
+  .compare {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 18px; padding: 18px 16px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .cmp-row { display: flex; align-items: stretch; gap: 10px; }
+  .cmp-col {
+    flex: 1; text-align: center;
+    background: rgba(255,255,255,0.04); border-radius: 14px; padding: 12px 6px;
+  }
+  .cmp-label { font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+  .cmp-val { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .cmp-val small { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .cmp-vs { align-self: center; font-size: 13px; font-weight: 800; color: var(--accent2); }
+  .cmp-open {
+    display: block; text-align: center; text-decoration: none;
+    margin-top: 14px; padding: 13px;
+    border-radius: 13px; font-size: 15px; font-weight: 700; color: #fff;
+    background: rgba(124,137,255,0.18); border: 1px solid rgba(124,137,255,0.4);
+  }
+  .cmp-open:active { background: rgba(124,137,255,0.3); }
+  .cmp-input { display: flex; gap: 8px; margin-top: 10px; }
+  .cmp-input input {
+    flex: 1; min-width: 0;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 13px 14px; color: var(--text);
+    font-size: 16px; -webkit-appearance: none; appearance: none;
+  }
+  .cmp-input input::placeholder { color: var(--muted); }
+  .cmp-input button {
+    border: none; border-radius: 12px; padding: 0 20px;
+    font-size: 15px; font-weight: 700; color: #fff;
+    background: linear-gradient(90deg, var(--accent), var(--accent2)); cursor: pointer;
+  }
+  .cmp-input button:active { transform: scale(0.97); }
+  .cmp-result { font-size: 13.5px; line-height: 1.7; margin-top: 12px; }
+  .cmp-result:empty { display: none; }
+  .cmp-result p { margin: 0 0 6px; } .cmp-result p:last-child { margin: 0; }
+  .cmp-result b { color: #fff; }
 </style>
 </head>
 <body>
@@ -208,6 +249,27 @@
 
   <div class="section-title">AI 网站 &amp; 视频延迟</div>
   <div class="sites" id="sites"></div>
+
+  <div class="section-title" style="margin-top:26px">和 fast.com 对照校验</div>
+  <div class="compare">
+    <div class="cmp-row">
+      <div class="cmp-col">
+        <div class="cmp-label">本工具 · Cloudflare</div>
+        <div class="cmp-val" id="cmpOurs">—<small> Mbps</small></div>
+      </div>
+      <div class="cmp-vs">VS</div>
+      <div class="cmp-col">
+        <div class="cmp-label">fast.com · Netflix</div>
+        <div class="cmp-val" id="cmpFast">—<small> Mbps</small></div>
+      </div>
+    </div>
+    <a class="cmp-open" id="openFast" href="https://fast.com" target="_blank" rel="noopener noreferrer">① 打开 fast.com 测一份 ↗</a>
+    <div class="cmp-input">
+      <input id="fastInput" type="number" inputmode="decimal" step="0.1" min="0" placeholder="② 把 fast.com 的数字填这里" />
+      <button id="fastBtn">对比</button>
+    </div>
+    <div class="cmp-result" id="cmpResult"></div>
+  </div>
 
   <div class="section-title" style="margin-top:26px">怎么理解这些数字？</div>
   <div class="explain">
@@ -286,6 +348,23 @@
         <p>加宽车道（升级带宽）能让一次拉过来更多车（大文件下载快），但<b>不会让单程变短</b>（延迟降不下来）。</p>
         <p>• 下载大文件、看高清 → 看<b>带宽</b><br/>• 点一下要等多久、打字跟不跟手 → 看<b>延迟</b></p>
         <p class="accent">这就是为什么你 155Mbps 已经很快，但首次打开网页、发消息仍要等——那是延迟和服务器在起作用，不是你的带宽不够。</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>🔀 两份测速（本工具 vs fast.com）怎么看？</summary>
+      <div class="ex-body">
+        <p>两个工具测的<b>不是同一条路</b>，所以数字不会完全一样，这很正常：</p>
+        <p>• <b>本工具</b>测的是你到 <b>Cloudflare</b> 服务器的速度。Cloudflare 节点遍布全球、通常离你很近，反映你<b>线路本身</b>的能力（上限）。</p>
+        <p>• <b>fast.com</b>测的是你到 <b>Netflix</b> 服务器的速度，更能反映你<b>看视频/流媒体</b>时的真实体验。</p>
+        <p class="accent">怎么对照判断：</p>
+        <ul class="calc">
+          <li><span>两者接近（差 20% 内）</span><span>结果可信</span></li>
+          <li><span>fast.com 明显更低</span><span>到视频服务的路被卡</span></li>
+          <li><span>fast.com 明显更高</span><span>它的节点离你更近</span></li>
+        </ul>
+        <p>差异多半来自：<b>服务器位置不同、走的线路不同、测的时间点不同、运营商对不同目标的限速</b>。</p>
+        <p class="note">💡 经验：两份里<b>较低</b>的那个，往往更接近你访问对应服务时的真实体感；两份都高且接近，说明你的网确实稳又快。</p>
       </div>
     </details>
   </div>
@@ -557,6 +636,7 @@ async function measureUpload(onProgress) {
 
 /* ---------- 主流程 ---------- */
 let running = false;
+let lastDownload = null; // 供 fast.com 对照使用
 async function runAll() {
   if (running) return;
   running = true;
@@ -589,6 +669,10 @@ async function runAll() {
   });
   $('dlBig').textContent = dl.toFixed(1);
   $('dlBar').style.width = (clamp(Math.log10(dl + 1) / Math.log10(1000), 0.02, 1) * 100) + '%';
+  lastDownload = dl;
+  $('cmpOurs').innerHTML = `${dl.toFixed(1)}<small> Mbps</small>`;
+  // 若已填过 fast.com 的值，重新对比
+  if ($('fastInput').value) compareFast();
 
   // 4) 上传
   $('dlLabel').textContent = '正在测量上传速度…';
@@ -655,6 +739,42 @@ function interpret(dl, ul, ping, jitter) {
   }
 }
 
+/* ---------- fast.com 对照 ---------- */
+function compareFast() {
+  const fast = parseFloat($('fastInput').value);
+  const box = $('cmpResult');
+  if (!isFinite(fast) || fast <= 0) {
+    box.innerHTML = `<p class="vmuted">请先在上面输入框填入 fast.com 测到的数字（只填数字，比如 138）。</p>`;
+    $('cmpFast').innerHTML = `—<small> Mbps</small>`;
+    return;
+  }
+  $('cmpFast').innerHTML = `${fast.toFixed(1)}<small> Mbps</small>`;
+
+  if (lastDownload == null) {
+    box.innerHTML = `<p class="vmuted">已记下 fast.com = <b>${fast.toFixed(1)} Mbps</b>。请先点上面「开始测速」跑一次本工具，再来对比。</p>`;
+    return;
+  }
+
+  const ours = lastDownload;
+  const ratio = fast / ours;
+  const diffPct = Math.round(Math.abs(fast - ours) / Math.max(ours, 1) * 100);
+  let verdict, color;
+  if (ratio >= 0.8 && ratio <= 1.25) {
+    color = 'good-t';
+    verdict = `两份很接近（差约 ${diffPct}%）。<b>结果可信</b>——你的下载速度大致就是 ${Math.round((ours + fast) / 2)} Mbps 这个量级。`;
+  } else if (ratio < 0.8) {
+    color = 'ok-t';
+    verdict = `fast.com（${fast.toFixed(0)}）明显低于本工具（${ours.toFixed(0)}），低约 ${diffPct}%。说明你的<b>线路本身够快</b>（到就近的 Cloudflare 节点），但<b>到 Netflix / 视频服务那条路被卡</b>了——可能是跨境、CDN 绕路或运营商对视频限速。看视频卡不卡，以 fast.com 这个数为准。`;
+  } else {
+    color = 'ok-t';
+    verdict = `fast.com（${fast.toFixed(0)}）明显高于本工具（${ours.toFixed(0)}），高约 ${diffPct}%。多半是 <b>fast.com 连到的 Netflix 节点离你更近 / 线路更优</b>，说明你线路上限其实更高；本工具这次连到的 Cloudflare 节点可能较远或较忙。可多测两次再看。`;
+  }
+  box.innerHTML =
+    `<p><b>本工具 ${ours.toFixed(1)}</b> &nbsp;vs&nbsp; <b>fast.com ${fast.toFixed(1)}</b> Mbps</p>` +
+    `<p class="${color}">${verdict}</p>` +
+    `<p class="vmuted">想知道为什么会有差异，展开下面的「🔀 两份测速怎么看？」。</p>`;
+}
+
 /* ---------- iOS 添加到主屏幕提示 ---------- */
 (function a2hs() {
   const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
@@ -671,6 +791,8 @@ if ('serviceWorker' in navigator) {
 
 renderSites();
 $('runBtn').addEventListener('click', runAll);
+$('fastBtn').addEventListener('click', compareFast);
+$('fastInput').addEventListener('keydown', e => { if (e.key === 'Enter') compareFast(); });
 </script>
 </body>
 </html>
