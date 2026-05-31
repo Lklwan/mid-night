@@ -292,8 +292,8 @@
 
   <div class="a2hs" id="a2hs"></div>
   <footer>
-    数据仅供参考 · 延迟为浏览器到站点的往返耗时（含 TLS）<br/>
-    测速由 Cloudflare 公共测速端点提供 · 不收集任何数据
+    测速:4 条连接并行、预热 1 秒后取 5 秒稳定窗口的平均吞吐（非峰值）<br/>
+    由 Cloudflare 公共测速端点提供 · 单次测试约消耗几十~上百 MB 流量 · 不收集任何数据
   </footer>
 </div>
 
@@ -426,56 +426,133 @@ async function runLatencyTests() {
   }));
 }
 
-/* ---------- 下载测速（Cloudflare 流式）---------- */
+/* ---------- 测速参数 ---------- */
+const TEST = {
+  dlStreams: 4,    // 下载并行连接数（跑满带宽）
+  ulStreams: 3,    // 上传并行连接数
+  chunk: 25e6,     // 每条连接每次请求/发送的字节数
+  warmup: 1000,    // 预热时间(ms)：丢掉 TCP 慢启动
+  duration: 5000,  // 测量总时长(ms)
+};
+
+/*
+  下载测速：多条连接并行持续拉流，预热后只统计「稳定窗口」内的
+  总字节 ÷ 时间 = 平均吞吐（不取峰值，结果稳定可信）。
+*/
 async function measureDownload(onProgress) {
-  const sizes = [1e6, 5e6, 1e7, 2.5e7]; // 渐进加大，自适应网速
-  let totalBytes = 0, totalTime = 0, best = 0;
-  for (const bytes of sizes) {
-    const url = `https://speed.cloudflare.com/__down?bytes=${bytes}`;
-    const t0 = performance.now();
-    try {
-      const resp = await fetch(url, { cache: 'no-store' });
-      const reader = resp.body.getReader();
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value.length;
-        const secs = (performance.now() - t0) / 1000;
-        if (secs > 0.05) {
-          const mbps = (received * 8) / secs / 1e6;
-          best = Math.max(best, mbps);
-          onProgress(mbps, clamp(received / bytes, 0, 1));
+  let totalBytes = 0, done = false;
+  let winStartT = null, winStartB = 0;
+  const start = performance.now();
+  const ctrls = [];
+
+  // 每条连接：循环不断请求新块，直到时间到
+  function streamLoop() {
+    return (async () => {
+      while (!done) {
+        const ctrl = new AbortController();
+        ctrls.push(ctrl);
+        try {
+          const url = `https://speed.cloudflare.com/__down?bytes=${TEST.chunk}&_=${Math.random()}`;
+          const resp = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+          const reader = resp.body.getReader();
+          while (true) {
+            const { done: d, value } = await reader.read();
+            if (d || done) { try { ctrl.abort(); } catch (e) {} break; }
+            totalBytes += value.length;
+          }
+        } catch (e) { if (done) break; }
+      }
+    })();
+  }
+
+  const tasks = Array.from({ length: TEST.dlStreams }, streamLoop);
+
+  // 采样：每 150ms 计算一次窗口内吞吐
+  await new Promise(resolve => {
+    const tick = setInterval(() => {
+      const now = performance.now(), elapsed = now - start;
+      if (winStartT === null && elapsed >= TEST.warmup) { winStartT = now; winStartB = totalBytes; }
+      if (winStartT !== null) {
+        const secs = (now - winStartT) / 1000;
+        if (secs > 0.1) {
+          const mbps = ((totalBytes - winStartB) * 8) / secs / 1e6;
+          onProgress(mbps, clamp(elapsed / TEST.duration, 0.02, 1));
         }
       }
-      const secs = (performance.now() - t0) / 1000;
-      totalBytes += received; totalTime += secs;
-      const mbps = (received * 8) / secs / 1e6;
-      best = Math.max(best, mbps);
-      // 已经很快说明带宽高，够样本即可停
-      if (totalTime > 6) break;
-    } catch (e) { break; }
+      if (elapsed >= TEST.duration) {
+        done = true;
+        ctrls.forEach(c => { try { c.abort(); } catch (e) {} });
+        clearInterval(tick);
+        resolve();
+      }
+    }, 150);
+  });
+  await Promise.allSettled(tasks);
+
+  if (winStartT == null) {
+    const secs = (performance.now() - start) / 1000;
+    return secs > 0 ? (totalBytes * 8) / secs / 1e6 : 0;
   }
-  return best || (totalTime > 0 ? (totalBytes * 8) / totalTime / 1e6 : 0);
+  const secs = (performance.now() - winStartT) / 1000;
+  return secs > 0 ? ((totalBytes - winStartB) * 8) / secs / 1e6 : 0;
 }
 
-/* ---------- 上传测速（Cloudflare）---------- */
+/*
+  上传测速：多条 XHR 并行持续上传，用 upload.onprogress 统计已发字节，
+  同样预热 + 稳定窗口取平均吞吐。
+*/
 async function measureUpload(onProgress) {
-  const payloadSizes = [2e6, 6e6, 1.2e7];
-  let best = 0;
-  for (const bytes of payloadSizes) {
-    const data = new Uint8Array(bytes);
-    const t0 = performance.now();
-    try {
-      await fetch('https://speed.cloudflare.com/__up', { method: 'POST', body: data, cache: 'no-store' });
-      const secs = (performance.now() - t0) / 1000;
-      const mbps = (bytes * 8) / secs / 1e6;
-      best = Math.max(best, mbps);
-      onProgress(best);
-      if (secs > 5) break;
-    } catch (e) { break; }
+  const payload = new Uint8Array(TEST.chunk);
+  let totalBytes = 0, done = false;
+  let winStartT = null, winStartB = 0;
+  const start = performance.now();
+  const xhrs = [];
+
+  function sendOne() {
+    return new Promise(res => {
+      const xhr = new XMLHttpRequest();
+      xhrs.push(xhr);
+      let last = 0;
+      try { xhr.open('POST', 'https://speed.cloudflare.com/__up', true); }
+      catch (e) { return res(); }
+      xhr.upload.onprogress = e => {
+        totalBytes += (e.loaded - last); last = e.loaded;
+        if (done) { try { xhr.abort(); } catch (_) {} }
+      };
+      const fin = () => res();
+      xhr.onload = fin; xhr.onerror = fin; xhr.onabort = fin;
+      try { xhr.send(payload); } catch (e) { res(); }
+    });
   }
-  return best;
+
+  const tasks = Array.from({ length: TEST.ulStreams }, () =>
+    (async () => { while (!done) { await sendOne(); } })()
+  );
+
+  await new Promise(resolve => {
+    const tick = setInterval(() => {
+      const now = performance.now(), elapsed = now - start;
+      if (winStartT === null && elapsed >= TEST.warmup) { winStartT = now; winStartB = totalBytes; }
+      if (winStartT !== null) {
+        const secs = (now - winStartT) / 1000;
+        if (secs > 0.1) onProgress(((totalBytes - winStartB) * 8) / secs / 1e6);
+      }
+      if (elapsed >= TEST.duration) {
+        done = true;
+        xhrs.forEach(x => { try { x.abort(); } catch (e) {} });
+        clearInterval(tick);
+        resolve();
+      }
+    }, 150);
+  });
+  await Promise.allSettled(tasks);
+
+  if (winStartT == null) {
+    const secs = (performance.now() - start) / 1000;
+    return secs > 0 ? (totalBytes * 8) / secs / 1e6 : 0;
+  }
+  const secs = (performance.now() - winStartT) / 1000;
+  return secs > 0 ? ((totalBytes - winStartB) * 8) / secs / 1e6 : 0;
 }
 
 /* ---------- 主流程 ---------- */
